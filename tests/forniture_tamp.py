@@ -17,6 +17,8 @@ class SimplifiedAsset:
         self.z_rotation = z_rotation
         self.ahandles = []
         self.name = name
+        self.gym_handle = gym_handle
+        self.sim_handle = sim_handle
 
         if color_rgb is not None:
             if color_rgb == "random":
@@ -43,16 +45,26 @@ class SimplifiedAsset:
             asset_options = gymapi.AssetOptions()
             asset_options.density = 10.0
             self.asset_gym = gym_handle.create_box(sim_handle, self.size_xyz[0], self.size_xyz[1], self.size_xyz[2], asset_options)
+        
+        elif self.asset_type == "table":
+            asset_file = "urdf/square_table.urdf"
+            asset_options = gymapi.AssetOptions()
+            self.asset_gym = gym_handle.load_asset(sim_handle, "../assets", asset_file, asset_options)
 
-        elif self.asset_type == "robot":
+        elif self.asset_type == "jackal":
             asset_file = "urdf/jackal/jackal.urdf"
+            asset_options = gymapi.AssetOptions()
+            self.asset_gym = gym_handle.load_asset(sim_handle, "../assets", asset_file, asset_options)
+
+        elif self.asset_type == "boxer":
+            asset_file = "urdf/boxer/boxer.urdf"
             asset_options = gymapi.AssetOptions()
             self.asset_gym = gym_handle.load_asset(sim_handle, "../assets", asset_file, asset_options)
         else:
             print("*** Type of asset not supported. Add it in the method: create_asset_obj()")
             quit()
 
-    def add2env(self, gym_handle ,env_handle):
+    def add2env(self ,env_handle):
 
         collisions_in_env = True
         collision_filter = 0
@@ -65,11 +77,11 @@ class SimplifiedAsset:
         pose.p = gymapi.Vec3(self.location[0], self.location[1], self.location[2])
         pose.r = gymapi.Quat.from_euler_zyx(0, 0, self.z_rotation)
 
-        actor_instance = gym_handle.create_actor(env_handle, self.asset_gym, pose, self.name, collision_group, collision_filter)
+        actor_instance = self.gym_handle.create_actor(env_handle, self.asset_gym, pose, self.name, collision_group, collision_filter)
         self.ahandles.append(actor_instance)
 
         if self.color_rgb is not None:
-            gym_handle.set_rigid_body_color(env_handle, actor_instance, 0, gymapi.MESH_VISUAL_AND_COLLISION, self.color_rgb)
+            self.gym_handle.set_rigid_body_color(env_handle, actor_instance, 0, gymapi.MESH_VISUAL_AND_COLLISION, self.color_rgb)
 
 #### GYM 
 
@@ -128,17 +140,17 @@ if viewer is None:
     print("*** Failed to create viewer")
     quit()    
 
-assets_list = [SimplifiedAsset(gym, sim, "box", name="box1", location=(2.0,2.0,1.0), size_xyz=(1, 0.5, 2), color_rgb="random"),
+assets_list = [SimplifiedAsset(gym, sim, "box", name="box1", location=(2.0,2.0,1.0), size_xyz=(1, 2, 0.5), color_rgb="random"),
                SimplifiedAsset(gym, sim, "box", name="box2",location=(2.0,2.0,2.0), size_xyz=(0.5, 0.5, 0.5), color_rgb="random"),
-               SimplifiedAsset(gym, sim, "cabinet", name="cabinet",location=(0.5, 0.5, 0.0), z_rotation=0, color_rgb="random"),
-               SimplifiedAsset(gym, sim, "robot", name="robot",location=(0.0, 2.0, 0.5))]
+               SimplifiedAsset(gym, sim, "cabinet", name="cabinet",location=(-0.5, -0.5, 0.0), z_rotation=3.1415, color_rgb="random"),
+               SimplifiedAsset(gym, sim, "jackal", name="robot",location=(0.0, 2.0, -0.5))]
 
 
 # set up the env grid
 num_envs = args.num_envs
 num_per_row = int(sqrt(num_envs))
 env_spacing = 4
-env_lower = gymapi.Vec3(-env_spacing, 0.0, -env_spacing)
+env_lower = gymapi.Vec3(-env_spacing, -env_spacing, 0.0)
 env_upper = gymapi.Vec3(env_spacing, env_spacing, env_spacing)
 
 # cache useful handles
@@ -151,23 +163,7 @@ for i in range(num_envs):
     envs.append(env)
 
     for simple_asset in assets_list:
-        simple_asset.add2env(gym, env)
-
-    # pose_cabinet = gymapi.Transform()
-    # pose_cabinet.p = gymapi.Vec3(0.5, 0.5, 0.0)
-    # pose_cabinet.r = gymapi.Quat.from_euler_zyx(-0.5 * 3.1415, 0, 3.1415)
-
-    # pose_box1 = gymapi.Transform()
-    # pose_box1.p = gymapi.Vec3(2.0, 2.0, 1.0)
-    # pose_box1.r = gymapi.Quat.from_euler_zyx(3.141592*0.5, 0, 0)
-
-    # pose_box2 = gymapi.Transform()
-    # pose_box2.p = gymapi.Vec3(2.0, 2.0, 2.0)
-    # pose_box2.r = gymapi.Quat(0.0, 0.0, 0.0, 1)
-
-    # pose_robot = gymapi.Transform()
-    # pose_robot.p = gymapi.Vec3(0.0, 2.0, 0.5)
-    # pose_robot.r = gymapi.Quat(0.0, 0.0, 0.0, 1)
+        simple_asset.add2env(env)
 
 while not gym.query_viewer_has_closed(viewer):
 
