@@ -19,6 +19,7 @@ class SimplifiedAsset:
         self.name = name
         self.gym_handle = gym_handle
         self.sim_handle = sim_handle
+        self.asset_type = asset_type
 
         if color_rgb is not None:
             if color_rgb == "random":
@@ -83,13 +84,18 @@ class SimplifiedAsset:
         if self.color_rgb is not None:
             self.gym_handle.set_rigid_body_color(env_handle, actor_instance, 0, gymapi.MESH_VISUAL_AND_COLLISION, self.color_rgb)
 
-        # Add stifness and ;inear damping to dof (if any)
-        robot_dof_props = gym.get_actor_dof_properties(env_handle, actor_instance)
-        robot_num_dofs = len(robot_dof_props)
-        # override default stiffness and damping values
-        robot_dof_props['stiffness'].fill(1000.0)
-        robot_dof_props['damping'].fill(1000.0)
-        gym.set_actor_dof_properties(env, actor_instance, robot_dof_props)
+        if self.asset_type == "jackal":
+            # Add stifness and ;inear damping to dof (if any)
+            robot_dof_props = gym.get_actor_dof_properties(env_handle, actor_instance)
+            robot_num_dofs = len(robot_dof_props)
+            # override default stiffness and damping values
+            robot_dof_props['stiffness'].fill(1000.0)
+            robot_dof_props['damping'].fill(100.0)
+            robot_dof_props["driveMode"][0:] = gymapi.DOF_MODE_VEL
+            gym.set_actor_dof_properties(env, actor_instance, robot_dof_props)
+
+            dof_names_control = ["front_left_wheel", "rear_left_wheel", "front_right_wheel", "rear_right_wheel"]
+            self.dof_handles = [gym.find_actor_dof_handle(env, actor_instance, dof_name) for dof_name in dof_names_control]
 
 #### GYM 
 
@@ -152,7 +158,7 @@ assets_list = [SimplifiedAsset(gym, sim, "box", name="box1", location=(2.0,2.0,1
                SimplifiedAsset(gym, sim, "box", name="box2",location=(2.0,2.0,2.0), size_xyz=(0.5, 0.5, 0.5), color_rgb="random"),
                SimplifiedAsset(gym, sim, "cabinet", name="cabinet",location=(-0.5, -0.5, 0.0), z_rotation=3.1415, color_rgb="random"),
                SimplifiedAsset(gym, sim, "jackal", name="robot",location=(0.0, 2.0, -0.5))]
-
+ROBOT = 3
 
 # set up the env grid
 num_envs = args.num_envs
@@ -163,25 +169,6 @@ env_upper = gymapi.Vec3(env_spacing, env_spacing, env_spacing)
 # cache useful handles
 envs = []
 
-# Attractor setup
-link_to_follow = "base_link"
-attractor_handles = []
-attractor_properties = gymapi.AttractorProperties()
-attractor_properties.stiffness = 5e5
-attractor_properties.damping = 5e3
-# Make attractor in all axes
-attractor_properties.axes = gymapi.AXIS_ALL
-pose = gymapi.Transform()
-pose.p = gymapi.Vec3(0, 0.0, 0.0)
-pose.r = gymapi.Quat(0, 0.0, 0.0, 1)
-# Create helper geometry used for visualization
-# Create an wireframe axis
-axes_geom = gymutil.AxesGeometry(0.1)
-# Create an wireframe sphere
-sphere_rot = gymapi.Quat.from_euler_zyx(0.5 * math.pi, 0, 0)
-sphere_pose = gymapi.Transform(r=sphere_rot)
-sphere_geom = gymutil.WireframeSphereGeometry(0.10, 12, 12, sphere_pose, color=(1, 0, 0))
-
 # Set up envs
 for i in range(num_envs):
     # create env
@@ -191,48 +178,25 @@ for i in range(num_envs):
     for simple_asset in assets_list:
         simple_asset.add2env(env)
 
-        if simple_asset.name == "robot":
-            body_dict = gym.get_actor_rigid_body_dict(env, simple_asset.ahandles[i])
-            props = gym.get_actor_rigid_body_states(env, simple_asset.ahandles[i], gymapi.STATE_POS)
-            link_to_follow_handle = gym.find_actor_rigid_body_handle(env, simple_asset.ahandles[i], link_to_follow)
-
-            # Initialize the attractor
-            attractor_properties.target = props['pose'][:][body_dict[link_to_follow]]
-            attractor_properties.target.p.x += -2.0
-            attractor_properties.target.p.y += -0.0
-            attractor_properties.target.p.z = 0.5
-            attractor_properties.rigid_handle = link_to_follow_handle
-
-            # Draw axes and sphere at attractor location
-            gymutil.draw_lines(axes_geom, gym, viewer, env, attractor_properties.target)
-            gymutil.draw_lines(sphere_geom, gym, viewer, env, attractor_properties.target)
-
-            attractor_handle = gym.create_rigid_body_attractor(env, attractor_properties)
-            attractor_handles.append(attractor_handle)
-
-def update_attractor(t):
-    gym.clear_lines(viewer)
+def control_jackal(t):
     for i in range(num_envs):
-        # Update attractor target from current franka state
-        attractor_properties = gym.get_attractor_properties(envs[i], attractor_handles[i])
-        pose = attractor_properties.target
-        pose.p.x = 0.2 * math.sin(1.5 * t - math.pi * float(i) / num_envs)
-        pose.p.y = 0.7 + 0.1 * math.cos(2.5 * t - math.pi * float(i) / num_envs)
-        pose.p.z = 0.2 * math.cos(1.5 * t - math.pi * float(i) / num_envs)
+        dof_handles = assets_list[ROBOT].dof_handles
+        vel_left = 10
+        vel_right = -2
 
-        gym.set_attractor_target(envs[i], attractor_handles[i], pose)
+        gym.set_dof_target_velocity(envs[i], dof_handles[0], vel_left)
+        gym.set_dof_target_velocity(envs[i], dof_handles[1], vel_left)
+        gym.set_dof_target_velocity(envs[i], dof_handles[2], vel_right)
+        gym.set_dof_target_velocity(envs[i], dof_handles[3], vel_right)
 
-        # Draw axes and sphere at attractor location
-        gymutil.draw_lines(axes_geom, gym, viewer, envs[i], pose)
-        gymutil.draw_lines(sphere_geom, gym, viewer, envs[i], pose)
-
-next_franka_update_time = 1.0
+control_update_time = 1.0
 while not gym.query_viewer_has_closed(viewer):
 
     t = gym.get_sim_time(sim)
-    if t >= next_franka_update_time:
+    if t >= control_update_time:
         # update_attractor(t)
-        next_franka_update_time += 0.01
+        control_jackal(t)
+        control_update_time += 0.05
 
     # step the physics
     gym.simulate(sim)
